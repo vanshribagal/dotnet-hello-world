@@ -15,13 +15,16 @@ pipeline {
     }
 
     environment {
-        DOCKERHUB_USERNAME   = 'vanshri12'
-        IMAGE_NAME           = 'dotnet-hello-world'
-        FULL_IMAGE           = "${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}"
+        // Docker Image Details
+        DOCKERHUB_USERNAME = 'vanshri12'
+        IMAGE_NAME = 'dotnet-hello-world'
+        FULL_IMAGE = "${DOCKERHUB_USERNAME}/${IMAGE_NAME}:${IMAGE_TAG}"
 
+        // Jenkins Credentials IDs (Configured in Jenkins UI)
         DOCKERHUB_CREDENTIALS = 'dockerhub-creds'
         SSH_CREDENTIALS       = 'app-ec2-ssh'
 
+        // Target EC2 Servers
         UAT_HOST  = 'ubuntu@172.31.20.160'
         PROD_HOST = 'ubuntu@172.31.21.113'
     }
@@ -37,7 +40,9 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${FULL_IMAGE} ."
+                sh """
+                  docker build -t ${FULL_IMAGE} .
+                """
             }
         }
 
@@ -51,8 +56,8 @@ pipeline {
                     )
                 ]) {
                     sh """
-                        echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
-                        docker push ${FULL_IMAGE}
+                      echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin
+                      docker push ${FULL_IMAGE}
                     """
                 }
             }
@@ -61,7 +66,9 @@ pipeline {
         stage('Deploy to Application EC2') {
             steps {
                 script {
-                    def TARGET = params.ENVIRONMENT == 'UAT' ? env.UAT_HOST : env.PROD_HOST
+                    def TARGET = params.ENVIRONMENT == 'UAT'
+                        ? env.UAT_HOST
+                        : env.PROD_HOST
 
                     withCredentials([
                         usernamePassword(
@@ -72,13 +79,13 @@ pipeline {
                     ]) {
                         sshagent(credentials: [SSH_CREDENTIALS]) {
                             sh """
-                            ssh -o StrictHostKeyChecking=no ${TARGET} "
-                              echo '${DOCKER_PASS}' | docker login -u '${DOCKER_USER}' --password-stdin &&
+                            ssh -o StrictHostKeyChecking=no ${TARGET} '
+                              echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin &&
                               docker pull ${FULL_IMAGE} &&
                               docker stop dotnet-app || true &&
                               docker rm dotnet-app || true &&
                               docker run -d -p 80:80 --name dotnet-app ${FULL_IMAGE}
-                            "
+                            '
                             """
                         }
                     }
@@ -89,9 +96,15 @@ pipeline {
         stage('Health Check') {
             steps {
                 script {
-                    def TARGET = params.ENVIRONMENT == 'UAT' ? env.UAT_HOST : env.PROD_HOST
+                    def TARGET = params.ENVIRONMENT == 'UAT'
+                        ? env.UAT_HOST
+                        : env.PROD_HOST
+
                     sshagent(credentials: [SSH_CREDENTIALS]) {
-                        sh "ssh -o StrictHostKeyChecking=no ${TARGET} curl -f http://localhost"
+                        sh """
+                        ssh -o StrictHostKeyChecking=no ${TARGET} \
+                        curl -f http://localhost/api/hello
+                        """
                     }
                 }
             }
